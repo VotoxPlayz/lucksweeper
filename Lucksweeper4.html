@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lucksweeper (Minesweeper Variant)</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom font for luck/game feel */
+        @import url('https://fonts.googleapis.com/css2?family=Luckiest+Guy&family=Inter:wght@400;600;700&display=swap');
+        
+        :root {
+            /* Light Mode Defaults */
+            --bg-primary: #f0fdf4; /* Light Green Background */
+            --bg-card: #ffffff; /* Card Background */
+            --bg-accent: #dcfce7; /* Light Accent (Stats Bar) */
+            --text-primary: #166534; /* Dark Green Text */
+            --text-secondary: #064e3b; /* More Subtle Text */
+            --grid-unrevealed: #6ee7b7; /* Bright Green Cell */
+            --grid-revealed: #ecfdf5; /* Very Light Revealed Cell */
+            --grid-border: #365314; /* Dark Border */
+            --grid-gap: #bbf7d0; /* Base Border/Gap Color */
+        }
+
+        [data-theme="dark"] {
+            /* Dark Mode Overrides */
+            --bg-primary: #111827; /* Dark Grey/Blue Background */
+            --bg-card: #1f2937; /* Darker Card Background */
+            --bg-accent: #374151; /* Dark Accent (Stats Bar) */
+            --text-primary: #a7f3d0; /* Light Green Text */
+            --text-secondary: #6ee7b7; /* Subtle Green Text */
+            --grid-unrevealed: #34d399; /* Green Cell */
+            --grid-revealed: #4b5563; /* Medium Grey Revealed Cell */
+            --grid-border: #16a34a; /* Green Border */
+            --grid-gap: #22c55e; /* Base Border/Gap Color */
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            transition: background-color 0.3s;
+        }
+
+        .luck-title {
+            font-family: 'Luckiest Guy', cursive;
+            text-shadow: 3px 3px 0 var(--grid-border);
+        }
+
+        /* Container for the grid */
+        #game-grid {
+            display: grid;
+            gap: 1px;
+            background-color: var(--grid-gap);
+            border: 4px solid var(--grid-border);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            transition: background-color 0.3s, border-color 0.3s;
+        }
+
+        /* Styles for individual cells (unrevealed) */
+        .cell {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            background-color: var(--grid-unrevealed);
+            color: var(--text-secondary);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.5rem;
+            font-weight: 700;
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.1s, transform 0.1s;
+        }
+
+        .cell:not(.revealed):hover {
+            background-color: #10b981; /* Static hover color */
+            transform: translateY(-2px);
+        }
+
+        /* Styles for revealed cells */
+        .cell.revealed {
+            background-color: var(--grid-revealed);
+            cursor: default;
+            transform: none !important;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+            color: var(--text-primary); /* Ensure text is readable */
+        }
+
+        /* Utility classes for visual flair */
+        .bomb-hit {
+            background-color: #f87171 !important; /* Red for bomb hit */
+            color: white !important;
+        }
+
+        .flag-icon {
+            color: #ef4444; /* Red flag */
+        }
+
+        .question-icon {
+            color: #facc15; /* Yellow question */
+        }
+
+        /* Modal styling */
+        .modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.7);
+        }
+        
+        /* Dropdown style to match theme */
+        #difficulty-select {
+            background-color: var(--bg-card);
+            color: var(--text-primary);
+            border: 2px solid var(--grid-border);
+        }
+
+    </style>
+</head>
+<body class="min-h-screen p-4 flex flex-col items-center justify-center">
+
+    <!-- Game Container -->
+    <div class="w-full max-w-4xl mx-auto">
+        <h1 class="luck-title text-5xl md:text-7xl text-center text-emerald-600 mb-6">
+            Lucksweeper 🍀
+        </h1>
+
+        <div class="bg-white [data-theme=dark]:bg-gray-800 p-4 rounded-xl shadow-2xl border-4 border-emerald-800 transition duration-300"
+             style="background-color: var(--bg-card); border-color: var(--grid-border);">
+            
+            <!-- Controls Bar -->
+            <div class="flex flex-col sm:flex-row justify-between items-center mb-4 p-3 rounded-lg shadow-inner transition duration-300"
+                 style="background-color: var(--bg-accent);">
+                
+                <!-- Difficulty Selector -->
+                <div class="mb-2 sm:mb-0">
+                    <label for="difficulty-select" class="font-semibold" style="color: var(--text-primary);">Difficulty:</label>
+                    <select id="difficulty-select" class="p-2 rounded-lg font-bold">
+                        <option value="easy">Easy (10x8, 10)</option>
+                        <option value="medium" selected>Medium (10x10, 15)</option>
+                        <option value="hard">Hard (18x14, 40)</option>
+                        <option value="very-hard">Very Hard (24x20, 99)</option>
+                    </select>
+                </div>
+
+                <!-- Dark Mode Toggle -->
+                <button id="dark-mode-toggle" class="p-2 rounded-full text-2xl" title="Toggle Dark/Light Mode" style="color: var(--text-primary);">
+                    <!-- Icon will be set dynamically -->
+                    <span id="theme-icon">🌙</span>
+                </button>
+            </div>
+
+            <!-- Stats Bar -->
+            <div class="flex items-center mb-4 p-2 rounded-lg shadow-inner" 
+                 style="background-color: var(--bg-accent); color: var(--text-secondary);">
+                <div class="text-lg font-bold flex-1 text-left">
+                    Flags Left: <span id="flag-count">15</span>
+                </div>
+                <button id="restart-button" class="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white font-bold rounded-full shadow-lg transition duration-150 ease-in-out">
+                    New Game
+                </button>
+                <div class="text-lg font-bold flex-1 text-right">
+                    Time: <span id="timer">0</span>
+                </div>
+            </div>
+
+            <!-- Game Grid Container (Scrollable for larger difficulties) -->
+            <div class="overflow-x-auto overflow-y-auto max-h-[70vh]">
+                 <div id="game-grid" class="mx-auto">
+                    <!-- Cells will be inserted here by JavaScript -->
+                </div>
+            </div>
+
+
+        </div>
+
+        <p class="mt-4 text-center text-sm text-gray-600 [data-theme=dark]:text-gray-400">
+            <strong>How to Play:</strong> Left-click to reveal (first click is always safe). Right-click to cycle: Flag 🚩-> Question❓-> Unrevealed. 🍀 means 1 or more bombs are adjacent. Good Luck!
+        </p>
+    </div>
+
+    <!-- Modal for Game Over/Win -->
+    <div id="game-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-backdrop">
+        <div class="p-8 rounded-xl shadow-2xl max-w-sm w-full text-center border-4 border-emerald-600 animate-pulse-once"
+             style="background-color: var(--bg-card); border-color: var(--grid-border);">
+            <h2 id="modal-title" class="text-3xl font-bold mb-4 luck-title" style="color: var(--text-primary);"></h2>
+            <p id="modal-message" class="mb-6" style="color: var(--text-secondary);"></p>
+            <button id="modal-restart" class="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white text-xl font-bold rounded-lg shadow-xl transition duration-150">
+                Play Again
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // --- Game Configuration & Constants ---
+        const DIFFICULTIES = {
+            'easy': { rows: 8, cols: 10, bombs: 10 },
+            'medium': { rows: 10, cols: 10, bombs: 15 },
+            'hard': { rows: 14, cols: 18, bombs: 40 },
+            'very-hard': { rows: 20, cols: 24, bombs: 99 }
+        };
+
+        const CELL_STATE = {
+            UNREVEALED: 0,
+            REVEALED: 1,
+            FLAGGED: 2,
+            QUESTION: 3
+        };
+
+        // --- Global Variables ---
+        let board = [];
+        let gameActive = false;
+        let cellsToReveal;
+        let timerInterval;
+        let seconds = 0;
+        let isFirstClick = true;
+        let ROWS = 10;
+        let COLS = 10;
+        let TOTAL_BOMBS = 15;
+        let flagsUsed = 0;
+
+        // --- DOM Elements ---
+        const htmlElement = document.documentElement;
+        const difficultySelect = document.getElementById('difficulty-select');
+        const gridElement = document.getElementById('game-grid');
+        const flagCountElement = document.getElementById('flag-count');
+        const timerElement = document.getElementById('timer');
+        const modal = document.getElementById('game-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalMessage = document.getElementById('modal-message');
+        const restartButton = document.getElementById('restart-button');
+        const modalRestartButton = document.getElementById('modal-restart');
+        const darkModeToggle = document.getElementById('dark-mode-toggle');
+        const themeIcon = document.getElementById('theme-icon');
+
+        // --- Utility Functions ---
+
+        const getCell = (x, y) => board[y]?.[x];
+
+        // Helper function to create the cell object
+        const createCell = (x, y) => ({
+            x,
+            y,
+            isBomb: false,
+            adjBombs: 0,
+            state: CELL_STATE.UNREVEALED,
+            element: null
+        });
+
+        // Returns an array of valid neighbor coordinates
+        function getNeighbors(x, y) {
+            const neighbors = [];
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    if (dx === 0 && dy === 0) continue;
+
+                    const nx = x + dx;
+                    const ny = y + dy;
+
+                    if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS) {
+                        neighbors.push([nx, ny]);
+                    }
+                }
+            }
+            return neighbors;
+        }
+
+        // --- Board Initialization & Bomb Placement ---
+
+        function initializeBoard() {
+            // Get current difficulty settings
+            const difficultyKey = difficultySelect.value;
+            const config = DIFFICULTIES[difficultyKey];
+            ROWS = config.rows;
+            COLS = config.cols;
+            TOTAL_BOMBS = config.bombs;
+
+            // Initialize board structure (no bombs yet)
+            board = Array(ROWS).fill(0).map((_, y) =>
+                Array(COLS).fill(0).map((_, x) => createCell(x, y))
+            );
+            
+            // Set grid template dynamically. Use minmax to ensure a minimum size on mobile but allow expansion if space permits.
+            gridElement.style.gridTemplateColumns = `repeat(${COLS}, minmax(30px, 1fr))`;
+            // Removed: gridElement.style.width = COLS * 30 + 'px'; (Let grid template handle width)
+            
+            renderBoard();
+
+            flagsUsed = 0;
+            flagCountElement.textContent = TOTAL_BOMBS;
+            cellsToReveal = ROWS * COLS - TOTAL_BOMBS;
+            gameActive = true;
+            isFirstClick = true; // Reset first click flag
+            
+            seconds = 0;
+            clearInterval(timerInterval);
+            timerInterval = null;
+            timerElement.textContent = seconds;
+            
+            modal.classList.add('hidden');
+        }
+
+        // New function to place bombs safely after the first click
+        function placeBombs(startX, startY) {
+            let bombsPlaced = 0;
+            const protectedCells = new Set();
+            protectedCells.add(`${startX},${startY}`);
+            
+            // Protect the neighbors too!
+            getNeighbors(startX, startY).forEach(([nx, ny]) => {
+                protectedCells.add(`${nx},${ny}`);
+            });
+
+            while (bombsPlaced < TOTAL_BOMBS) {
+                const x = Math.floor(Math.random() * COLS);
+                const y = Math.floor(Math.random() * ROWS);
+                const cellKey = `${x},${y}`;
+
+                if (!board[y][x].isBomb && !protectedCells.has(cellKey)) {
+                    board[y][x].isBomb = true;
+                    bombsPlaced++;
+                }
+            }
+            calculateAdjacentBombs();
+        }
+
+        function calculateAdjacentBombs() {
+            for (let y = 0; y < ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    if (board[y][x].isBomb) continue;
+                    
+                    let count = 0;
+                    getNeighbors(x, y).forEach(([nx, ny]) => {
+                        if (getCell(nx, ny).isBomb) {
+                            count++;
+                        }
+                    });
+                    board[y][x].adjBombs = count;
+                }
+            }
+        }
+
+        // --- Rendering and Event Handling ---
+
+        function renderBoard() {
+            gridElement.innerHTML = '';
+            for (let y = 0; y < ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    const cellData = getCell(x, y);
+                    const cellDiv = document.createElement('div');
+                    cellDiv.className = 'cell rounded-sm';
+                    cellDiv.dataset.x = x;
+                    cellDiv.dataset.y = y;
+                    cellDiv.addEventListener('click', handleLeftClick);
+                    cellDiv.addEventListener('contextmenu', handleRightClick);
+
+                    cellData.element = cellDiv;
+                    gridElement.appendChild(cellDiv);
+                }
+            }
+        }
+
+        function updateCellAppearance(cell) {
+            const el = cell.element;
+            el.innerHTML = '';
+            el.classList.remove('revealed', 'flag-icon', 'question-icon');
+            el.style.fontSize = '1.5rem';
+
+            if (cell.state === CELL_STATE.FLAGGED) {
+                el.innerHTML = '🚩';
+                el.classList.add('flag-icon');
+            } else if (cell.state === CELL_STATE.QUESTION) {
+                el.innerHTML = '❓';
+                el.classList.add('question-icon');
+            } else if (cell.state === CELL_STATE.REVEALED) {
+                el.classList.add('revealed');
+                
+                if (cell.isBomb) {
+                    el.innerHTML = '💣';
+                    el.classList.add('bomb-hit');
+                    el.style.fontSize = '1.8rem';
+                } else if (cell.adjBombs > 0) {
+                    // Lucksweeper rule: 1+ adjacent bombs shows a clover!
+                    el.innerHTML = '🍀'; 
+                    el.style.fontSize = '1.8rem';
+                } else {
+                    // Zero adjacent bombs: Empty square
+                    el.innerHTML = '';
+                }
+            }
+        }
+
+        function revealCell(x, y) {
+            const cell = getCell(x, y);
+
+            if (!cell || cell.state === CELL_STATE.REVEALED || cell.state === CELL_STATE.FLAGGED) {
+                return;
+            }
+            
+            // If it was a question mark, but we clicked it, treat it as unrevealed
+            if (cell.state === CELL_STATE.QUESTION) {
+                 cell.state = CELL_STATE.UNREVEALED;
+            }
+
+            // Reveal the cell
+            cell.state = CELL_STATE.REVEALED;
+            cellsToReveal--;
+            updateCellAppearance(cell);
+
+            // Check win condition
+            if (cellsToReveal === 0) {
+                endGame(true);
+                return;
+            }
+
+            // Lucksweeper logic: stops cascade if adjacent bombs > 0
+            if (cell.adjBombs > 0) {
+                return; 
+            } else {
+                // Classic cascade for 0-bomb squares
+                getNeighbors(x, y).forEach(([nx, ny]) => {
+                    revealCell(nx, ny);
+                });
+            }
+        }
+
+        // --- Core Game Flow ---
+
+        function handleLeftClick(event) {
+            if (!gameActive) {
+                return;
+            }
+
+            const x = parseInt(event.target.dataset.x);
+            const y = parseInt(event.target.dataset.y);
+            const cell = getCell(x, y);
+
+            if (cell.state === CELL_STATE.FLAGGED || cell.state === CELL_STATE.QUESTION) {
+                return; 
+            }
+
+            if (isFirstClick) {
+                // First Click Safety: Place bombs *after* the click, ensuring this cell and its neighbors are clear
+                placeBombs(x, y);
+                isFirstClick = false;
+                
+                // Start timer
+                if (!timerInterval) {
+                    timerInterval = setInterval(() => {
+                        seconds++;
+                        timerElement.textContent = seconds;
+                    }, 1000);
+                }
+            }
+
+
+            if (cell.isBomb) {
+                // Should only happen if it's NOT the first click
+                endGame(false, x, y);
+            } else {
+                revealCell(x, y);
+            }
+        }
+
+        function handleRightClick(event) {
+            event.preventDefault(); // Prevent context menu
+            if (!gameActive) return;
+
+            const x = parseInt(event.target.dataset.x);
+            const y = parseInt(event.target.dataset.y);
+            const cell = getCell(x, y);
+
+            if (cell.state === CELL_STATE.REVEALED) return;
+
+            // Flag -> Question -> Unrevealed cycle
+            if (cell.state === CELL_STATE.UNREVEALED) {
+                cell.state = CELL_STATE.FLAGGED;
+                flagsUsed++;
+            } else if (cell.state === CELL_STATE.FLAGGED) {
+                cell.state = CELL_STATE.QUESTION;
+                flagsUsed--;
+            } else if (cell.state === CELL_STATE.QUESTION) {
+                cell.state = CELL_STATE.UNREVEALED;
+            }
+            
+            flagCountElement.textContent = TOTAL_BOMBS - flagsUsed;
+            updateCellAppearance(cell);
+        }
+
+        function endGame(isWin, bombX = -1, bombY = -1) {
+            gameActive = false;
+            clearInterval(timerInterval);
+            timerInterval = null;
+
+            // Reveal all bombs and final states
+            for (let y = 0; y < ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    const cell = getCell(x, y);
+                    
+                    if (cell.state !== CELL_STATE.REVEALED) {
+                        if (cell.isBomb && cell.state !== CELL_STATE.FLAGGED) {
+                            cell.state = CELL_STATE.REVEALED;
+                        } else if (!cell.isBomb && cell.state === CELL_STATE.FLAGGED) {
+                             // Mark incorrectly flagged
+                            cell.element.innerHTML = '❌'; 
+                            cell.element.classList.add('revealed');
+                        } else if (cell.isBomb && cell.state === CELL_STATE.FLAGGED) {
+                            // Correctly flagged bomb
+                            cell.element.innerHTML = '🚩'; 
+                            cell.element.classList.add('revealed');
+                        }
+                        updateCellAppearance(cell);
+                    }
+                }
+            }
+
+            if (isWin) {
+                modalTitle.textContent = 'YOU GOT LUCKY!';
+                modalMessage.textContent = `You cleared the field in ${seconds} seconds!`;
+            } else {
+                // Highlight the bomb that was hit
+                if (bombX !== -1 && bombY !== -1) {
+                    getCell(bombX, bombY).element.classList.add('bomb-hit');
+                }
+                modalTitle.textContent = 'BAD LUCK!';
+                modalMessage.textContent = 'Better luck next time. A bomb was revealed.';
+            }
+
+            modal.classList.remove('hidden');
+        }
+
+        // --- Dark Mode Logic ---
+
+        function toggleDarkMode() {
+            if (htmlElement.getAttribute('data-theme') === 'dark') {
+                htmlElement.removeAttribute('data-theme');
+                localStorage.setItem('theme', 'light');
+                themeIcon.textContent = '🌙'; // Moon for light mode
+            } else {
+                htmlElement.setAttribute('data-theme', 'dark');
+                localStorage.setItem('theme', 'dark');
+                themeIcon.textContent = '☀️'; // Sun for dark mode
+            }
+        }
+
+        function loadTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+            if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+                htmlElement.setAttribute('data-theme', 'dark');
+                themeIcon.textContent = '☀️';
+            } else {
+                htmlElement.removeAttribute('data-theme');
+                themeIcon.textContent = '🌙';
+            }
+        }
+
+        // --- Event Listeners and Initial Load ---
+
+        difficultySelect.addEventListener('change', initializeBoard);
+        restartButton.addEventListener('click', initializeBoard);
+        modalRestartButton.addEventListener('click', initializeBoard);
+        darkModeToggle.addEventListener('click', toggleDarkMode);
+
+        // Add a safety check to ensure the board is initialized after the DOM loads
+        window.onload = () => {
+            loadTheme();
+            initializeBoard();
+        };
+    </script>
+
+</body>
+</html>
